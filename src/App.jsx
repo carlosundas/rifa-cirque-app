@@ -6,7 +6,7 @@ import {
   Ticket, Upload, ShieldCheck, CheckCircle2, XCircle, User, Phone, 
   Lock, LogOut, Clock, Image as ImageIcon, ShoppingCart, 
   Copy, Check, Landmark, ChevronDown, ChevronUp, Info, Timer,
-  Car, Wine, Tent, Users, Armchair, Badge, Gift, Wifi, Bath, Sparkles
+  Car, Wine, Tent, Users, Armchair, Badge, Gift, Wifi, Bath, Sparkles, AlertTriangle
 } from 'lucide-react';
 
 /* =========================================================================
@@ -33,7 +33,6 @@ const appId = 'rifa-cirque-produccion';
 
 const TOTAL_TICKETS = 70;
 const TICKET_PRICE = 10000;
-// Contraseña directa para evitar warnings de compilación
 const ADMIN_PASSWORD = 'unda1995'; 
 const RESERVATION_TIME_LIMIT = 600; 
 
@@ -105,8 +104,11 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [adminPassInput, setAdminPassInput] = useState('');
 
-  // 1. Inicializar Autenticación
+  // 1. Inicializar Autenticación y Título
   useEffect(() => {
+    // ESTA LÍNEA CAMBIA EL TÍTULO DE LA PESTAÑA DEL NAVEGADOR
+    document.title = "Rifa 2 Entradas Cirque du Soleil";
+
     const initAuth = async () => {
       try {
         await signInAnonymously(auth);
@@ -413,7 +415,9 @@ export default function App() {
         <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <Ticket className="h-6 w-6 md:h-8 md:w-8 text-red-500" />
-            <h1 className="text-lg md:text-xl font-bold tracking-tight uppercase">Cirque du Soleil <span className="text-red-500 hidden sm:inline">• Tapis Rouge</span></h1>
+            <h1 className="text-lg md:text-xl font-bold tracking-tight uppercase">
+              Rifa 2 Entradas <span className="text-red-500 hidden sm:inline">• Cirque du Soleil</span>
+            </h1>
           </div>
           <div>
             {isAdmin ? (
@@ -488,7 +492,7 @@ export default function App() {
             </div>
 
             <div className="max-w-4xl mx-auto bg-slate-800 text-slate-200 rounded-lg p-4 flex items-start gap-3 shadow-inner">
-              <span className="text-yellow-400 text-xl font-black mt-0.5 shrink-0">⚠️</span>
+              <AlertTriangle className="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" />
               <p className="text-sm leading-relaxed">
                 <span className="font-bold text-white block mb-0.5">Condiciones del Sorteo:</span> 
                 Si hasta el <strong>27 de agosto de 2026</strong> no se logra vender la totalidad de los {TOTAL_TICKETS} números, el plazo de la rifa se extenderá un mes más, hasta el <strong>27 de septiembre de 2026</strong>. Para que el sorteo se lleve a cabo de manera efectiva en cualquiera de las fechas, se requerirá un mínimo de <strong>50 números vendidos</strong>.
