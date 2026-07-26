@@ -5,7 +5,7 @@ import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, getDoc } 
 import { 
   Ticket, Upload, ShieldCheck, CheckCircle2, XCircle, User, Phone, 
   Lock, LogOut, Clock, Image as ImageIcon, ShoppingCart, 
-  Copy, Check, IdCard, Landmark, ChevronDown, ChevronUp, Info, Timer,
+  Copy, Check, Landmark, ChevronDown, ChevronUp, Info, Timer,
   Car, Wine, Tent, Users, Armchair, Badge, Gift, Wifi, Bath, Sparkles
 } from 'lucide-react';
 
@@ -33,7 +33,8 @@ const appId = 'rifa-cirque-produccion';
 
 const TOTAL_TICKETS = 70;
 const TICKET_PRICE = 10000;
-const ADMIN_PASSWORD = 'elunda123'; 
+// Contraseña directa para evitar warnings de compilación
+const ADMIN_PASSWORD = 'unda1995'; 
 const RESERVATION_TIME_LIMIT = 600; 
 
 const getTicketsCollection = () => collection(db, 'rifas', appId, 'tickets');
@@ -81,7 +82,11 @@ export default function App() {
   const [authError, setAuthError] = useState(false);
 
   const [selectedNumbers, setSelectedNumbers] = useState([]);
+  
+  // Estados para Admin
   const [adminSelectedTicket, setAdminSelectedTicket] = useState(null);
+  const [adminTicketGroup, setAdminTicketGroup] = useState([]);
+  
   const [showReserveModal, setShowReserveModal] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [showAdminTicketModal, setShowAdminTicketModal] = useState(false);
@@ -94,7 +99,7 @@ export default function App() {
   const [receiptImage, setReceiptImage] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadStatus, setUploadStatus] = useState(''); 
-  const [submitError, setSubmitError] = useState(null); // Nuevo estado para errores
+  const [submitError, setSubmitError] = useState(null); 
   
   const [showBankDetails, setShowBankDetails] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -174,7 +179,6 @@ export default function App() {
     }, {});
   }, [ticketsData]);
 
-  // Detectar conflictos si alguien más reservó los números que tenemos seleccionados
   const conflictingNumbers = selectedNumbers.filter(num => ticketsMap[num] && ticketsMap[num].status !== 'available');
   const hasConflicts = conflictingNumbers.length > 0;
 
@@ -196,13 +200,21 @@ export default function App() {
 
     if (isAdmin) {
       if (ticketInfo && (ticketInfo.status === 'reserved' || ticketInfo.status === 'confirmed')) {
+        const group = Object.entries(ticketsMap)
+          .filter(([id, data]) => {
+            const sameReceipt = data.receiptImageUrl && data.receiptImageUrl === ticketInfo.receiptImageUrl;
+            const samePerson = data.buyerName === ticketInfo.buyerName && data.buyerRut === ticketInfo.buyerRut;
+            return sameReceipt || samePerson;
+          })
+          .map(([id]) => id);
+
         setAdminSelectedTicket(ticketStr);
+        setAdminTicketGroup(group.sort((a, b) => a - b)); 
         setShowAdminTicketModal(true);
       }
       return;
     }
 
-    // Permitimos seleccionar si está disponible, o DESMARCARLO si ya estaba seleccionado (incluso si hubo un conflicto)
     if (!ticketInfo || ticketInfo.status === 'available' || isSelected) {
       setSelectedNumbers(prev => {
         if (prev.includes(ticketStr)) return prev.filter(n => n !== ticketStr);
@@ -248,7 +260,6 @@ export default function App() {
     setUploadStatus('Verificando disponibilidad...');
     
     try {
-      // 1. Verificación concurrente en la base de datos (Milésimas de segundo antes de guardar)
       const checks = selectedNumbers.map(async (numStr) => {
         const ticketRef = getTicketDoc(numStr);
         const ticketSnap = await getDoc(ticketRef);
@@ -265,14 +276,12 @@ export default function App() {
       const unavailableNumbers = checkResults.filter(num => num !== null);
 
       if (unavailableNumbers.length > 0) {
-        // Alguien nos ganó el número
         setIsSubmitting(false);
         setUploadStatus('');
         setSubmitError(`Alguien más acaba de reservar el/los número(s): ${unavailableNumbers.join(', ')}.`);
-        return; // Detenemos la función AQUÍ sin cerrar la ventana.
+        return; 
       }
 
-      // 2. Subir imagen
       let driveImageUrl = receiptImage; 
       if (GOOGLE_SCRIPT_URL.includes("script.google.com")) {
         setUploadStatus('Subiendo imagen a Drive...');
@@ -293,7 +302,6 @@ export default function App() {
         driveImageUrl = driveData.url;
       }
 
-      // 3. Guardar en Firestore 
       setUploadStatus('Guardando reserva en la base de datos...');
       const promises = selectedNumbers.map(numStr => {
         const ticketRef = getTicketDoc(numStr);
@@ -310,7 +318,6 @@ export default function App() {
 
       await Promise.all(promises);
       
-      // Limpiar todo después del éxito
       setSelectedNumbers([]);
       setBuyerName('');
       setBuyerRut('');
@@ -342,23 +349,33 @@ export default function App() {
 
   const approveTicket = async () => {
     try {
-      const ticketRef = getTicketDoc(adminSelectedTicket);
-      await setDoc(ticketRef, { ...ticketsMap[adminSelectedTicket], status: 'confirmed' });
+      const promises = adminTicketGroup.map(num => {
+        const ticketRef = getTicketDoc(num);
+        return setDoc(ticketRef, { ...ticketsMap[num], status: 'confirmed' });
+      });
+      await Promise.all(promises);
+      
       setShowAdminTicketModal(false);
-      showNotification(`Número ${adminSelectedTicket} aprobado.`, "success");
+      showNotification(`Los números ${adminTicketGroup.join(', ')} fueron aprobados.`, "success");
     } catch (error) {
       console.error("Error al aprobar:", error);
+      showNotification("Hubo un error al aprobar.", "error");
     }
   };
 
   const rejectTicket = async () => {
     try {
-      const ticketRef = getTicketDoc(adminSelectedTicket);
-      await deleteDoc(ticketRef);
+      const promises = adminTicketGroup.map(num => {
+        const ticketRef = getTicketDoc(num);
+        return deleteDoc(ticketRef);
+      });
+      await Promise.all(promises);
+
       setShowAdminTicketModal(false);
-      showNotification(`Número ${adminSelectedTicket} liberado.`, "success");
+      showNotification(`Los números ${adminTicketGroup.join(', ')} fueron liberados.`, "success");
     } catch (error) {
       console.error("Error al rechazar:", error);
+      showNotification("Hubo un error al liberar.", "error");
     }
   };
 
@@ -422,7 +439,7 @@ export default function App() {
                 <Sparkles className="w-5 h-5 text-yellow-500" /> Categoría TAPIS ROUGE <Sparkles className="w-5 h-5 text-yellow-500" />
               </p>
               <span className="inline-block bg-red-900/60 border border-red-700 text-red-100 text-sm md:text-base font-semibold px-4 py-1.5 rounded-full shadow-sm mt-1">
-                <b>Fecha función:</b> Viernes 22 de Enero de 2027 • 17:00 HRS. • Espacio Riesco
+                Viernes 22 de Enero de 2027 • 17:00 HRS. • Espacio Riesco
               </span>
               <span className="inline-block bg-yellow-400 border border-yellow-500 text-red-900 text-base md:text-lg font-black px-5 py-1.5 rounded-full shadow-md mt-2 animate-in zoom-in">
                 Valor del número: ${TICKET_PRICE.toLocaleString('es-CL')}
@@ -436,7 +453,7 @@ export default function App() {
               El afortunado ganador de esta rifa obtendrá 2 entradas para el exclusivo sector <span className="font-bold text-slate-800">Tapis Rouge</span>. Vivirás el espectáculo de una forma especial y diferenciada, desde muy cerca del escenario, en un área reservada para solo unas 200 personas por función.
             </p>
 
-            <div className="max-w-4xl mx-auto bg-slate-50 rounded-xl border border-slate-100 overflow-hidden">
+            <div className="max-w-4xl mx-auto bg-slate-50 rounded-xl border border-slate-100 overflow-hidden mb-4">
               <button onClick={() => setShowBenefits(!showBenefits)} className="w-full p-4 flex items-center justify-between text-slate-800 font-bold hover:bg-slate-100 transition-colors">
                 <span className="flex items-center gap-2">
                   <StarIcon className="w-5 h-5 text-yellow-500" /> 
@@ -460,13 +477,21 @@ export default function App() {
               )}
             </div>
 
-            <div className="max-w-4xl mx-auto mt-4 text-xs text-slate-500 bg-slate-50/50 p-3 rounded-lg flex items-start gap-2">
+            <div className="max-w-4xl mx-auto mt-4 text-xs text-slate-500 bg-slate-50/50 p-3 rounded-lg flex items-start gap-2 mb-3">
               <Info className="w-4 h-4 shrink-0 mt-0.5 opacity-70" />
               <p className="leading-relaxed">
                 <strong>Nota de Transparencia:</strong> Esta rifa es organizada de forma estrictamente particular e independiente. No está afiliada, patrocinada, ni respaldada por Cirque du Soleil, PuntoTicket, Banco de Chile ni sus productoras asociadas. Puedes revisar los detalles del 
                 <a href="https://www.puntoticket.com/cirque-du-soleil-alegria" target="_blank" rel="noopener noreferrer" className="text-red-700 hover:text-red-800 font-medium hover:underline ml-1">
                   evento oficial aquí
                 </a>.
+              </p>
+            </div>
+
+            <div className="max-w-4xl mx-auto bg-slate-800 text-slate-200 rounded-lg p-4 flex items-start gap-3 shadow-inner">
+              <span className="text-yellow-400 text-xl font-black mt-0.5 shrink-0">⚠️</span>
+              <p className="text-sm leading-relaxed">
+                <span className="font-bold text-white block mb-0.5">Condiciones del Sorteo:</span> 
+                Si hasta el <strong>27 de agosto de 2026</strong> no se logra vender la totalidad de los {TOTAL_TICKETS} números, el plazo de la rifa se extenderá un mes más, hasta el <strong>27 de septiembre de 2026</strong>. Para que el sorteo se lleve a cabo de manera efectiva en cualquiera de las fechas, se requerirá un mínimo de <strong>50 números vendidos</strong>.
               </p>
             </div>
 
@@ -496,7 +521,6 @@ export default function App() {
 
             let baseClasses = "relative w-full aspect-square rounded-xl flex items-center justify-center font-bold text-base md:text-xl transition-all shadow-sm border-2 cursor-pointer select-none ";
             
-            // Si el número está seleccionado pero alguien más lo ocupó
             if (isSelected && conflictingNumbers.includes(ticketStr)) {
               baseClasses += "bg-rose-200 border-red-600 text-red-800 ring-4 ring-red-400 scale-105 shadow-md z-10 animate-pulse";
             } else if (isSelected) {
@@ -505,7 +529,7 @@ export default function App() {
               baseClasses += "bg-white border-slate-200 text-slate-700 hover:border-red-400 hover:shadow-md hover:-translate-y-0.5";
             } else if (status === 'reserved') {
               baseClasses += "bg-amber-100 border-amber-400 text-amber-800";
-              if (isAdmin) baseClasses += " hover:bg-amber-200 ring-2 ring-amber-500 ring-offset-1 animate-pulse";
+              if (isAdmin) baseClasses += " hover:bg-amber-200 ring-2 ring-amber-500 ring-offset-1";
               else baseClasses += " opacity-80 cursor-not-allowed";
             } else if (status === 'confirmed') {
               baseClasses += "bg-slate-800 border-slate-900 text-white opacity-95";
@@ -581,8 +605,6 @@ export default function App() {
             </div>
             
             <div className="p-5 overflow-y-auto space-y-6">
-
-              {/* AVISO DE CONFLICTO (NUEVO) */}
               {(hasConflicts || submitError) && (
                 <div className="bg-red-50 border-l-4 border-red-600 p-4 rounded-r-xl shadow-sm animate-in fade-in">
                   <div className="flex items-start gap-3">
@@ -683,15 +705,25 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL ADMIN - REVISAR TICKET */}
+      {/* MODAL ADMIN - REVISAR TICKET EN BLOQUE */}
       {showAdminTicketModal && isAdmin && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm overflow-y-auto">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl my-8 overflow-hidden">
             <div className={`p-5 text-white text-center relative ${ticketsMap[adminSelectedTicket]?.status === 'confirmed' ? 'bg-slate-800' : 'bg-amber-500'}`}>
-              <h3 className="text-xl font-bold">Gestión de Compra</h3>
-              <p className="text-sm opacity-90 mt-1 font-medium">N° Ticket: {adminSelectedTicket} | Estado: {ticketsMap[adminSelectedTicket]?.status === 'confirmed' ? 'Confirmado' : 'Pendiente'}</p>
+              <h3 className="text-xl font-bold">Gestión de Compra en Bloque</h3>
+              <p className="text-sm opacity-90 mt-1 font-medium">Estado: {ticketsMap[adminSelectedTicket]?.status === 'confirmed' ? 'Confirmados' : 'Pendientes de Aprobación'}</p>
             </div>
             <div className="p-6">
+              
+              <div className="bg-amber-50 border-l-4 border-amber-500 p-3 mb-6 rounded-r-lg">
+                <p className="text-amber-900 font-bold text-sm mb-1">Números de esta compra ({adminTicketGroup.length}):</p>
+                <div className="flex flex-wrap gap-2">
+                  {adminTicketGroup.map(num => (
+                    <span key={num} className="bg-amber-200 text-amber-900 px-2 py-1 rounded font-bold text-xs">{num}</span>
+                  ))}
+                </div>
+              </div>
+
               <div className="space-y-0 mb-6 bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
                 <div className="flex justify-between items-center text-sm border-b border-slate-200 p-3 bg-white">
                   <span className="text-slate-500 font-medium">Comprador:</span><span className="font-bold text-slate-800">{ticketsMap[adminSelectedTicket]?.buyerName}</span>
@@ -702,12 +734,15 @@ export default function App() {
                 <div className="flex justify-between items-center text-sm p-3 bg-white">
                   <span className="text-slate-500 font-medium">Teléfono:</span><span className="font-semibold text-slate-800">{ticketsMap[adminSelectedTicket]?.buyerPhone}</span>
                 </div>
+                <div className="flex justify-between items-center text-sm p-3 border-t border-slate-200 bg-emerald-50">
+                  <span className="text-slate-500 font-medium">Pago esperado:</span><span className="font-black text-emerald-700">${(adminTicketGroup.length * TICKET_PRICE).toLocaleString('es-CL')}</span>
+                </div>
               </div>
               
               {ticketsMap[adminSelectedTicket]?.receiptImageUrl ? (
                 <div className="mb-6">
                   <p className="text-sm font-bold text-slate-700 mb-2">Enlace del comprobante (Drive):</p>
-                  <a href={ticketsMap[adminSelectedTicket].receiptImageUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full py-3 bg-blue-50 text-blue-700 font-bold border border-blue-200 rounded-xl hover:bg-blue-100 transition">
+                  <a href={ticketsMap[adminSelectedTicket].receiptImageUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full py-3 bg-blue-50 text-blue-700 font-bold border border-blue-200 rounded-xl hover:bg-blue-100 transition shadow-sm">
                     <ImageIcon className="w-5 h-5"/> Ver foto en Google Drive
                   </a>
                 </div>
@@ -725,12 +760,12 @@ export default function App() {
               <div className="flex gap-3">
                 <button onClick={() => setShowAdminTicketModal(false)} className="px-4 py-2.5 rounded-xl font-bold text-slate-600 hover:bg-slate-100 transition border border-transparent">Cerrar</button>
                 <div className="flex-1 flex gap-2 justify-end">
-                  <button onClick={rejectTicket} className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl font-bold text-red-700 bg-red-50 hover:bg-red-100 transition border border-red-200 w-full sm:w-auto">
-                    <XCircle className="w-5 h-5" /> Liberar
+                  <button onClick={rejectTicket} className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl font-bold text-red-700 bg-red-50 hover:bg-red-100 transition border border-red-200 w-full sm:w-auto shadow-sm">
+                    <XCircle className="w-5 h-5" /> Liberar Todos
                   </button>
                   {ticketsMap[adminSelectedTicket]?.status !== 'confirmed' && (
                     <button onClick={approveTicket} className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition border border-emerald-200 shadow-sm w-full sm:w-auto">
-                      <CheckCircle2 className="w-5 h-5" /> Aprobar
+                      <CheckCircle2 className="w-5 h-5" /> Aprobar Todos
                     </button>
                   )}
                 </div>
