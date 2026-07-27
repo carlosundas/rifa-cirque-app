@@ -31,7 +31,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'rifa-cirque-produccion';
 
-const TOTAL_TICKETS = 70;
+const TOTAL_TICKETS = 80;
 const TICKET_PRICE = 10000;
 const ADMIN_PASSWORD = 'unda1995'; 
 const RESERVATION_TIME_LIMIT = 600; 
