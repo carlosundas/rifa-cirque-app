@@ -385,7 +385,7 @@ export default function App() {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50 flex-col gap-4">
         <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-red-700"></div>
-        <p className="text-slate-500 font-medium animate-pulse">Conectando al servidor...</p>
+        <p className="text-slate-500 font-medium animate-pulse">Cargando números disponibles...</p>
       </div>
     );
   }
@@ -443,7 +443,7 @@ export default function App() {
                 <Sparkles className="w-5 h-5 text-yellow-500" /> Categoría TAPIS ROUGE <Sparkles className="w-5 h-5 text-yellow-500" />
               </p>
               <span className="inline-block bg-red-900/60 border border-red-700 text-red-100 text-sm md:text-base font-semibold px-4 py-1.5 rounded-full shadow-sm mt-1">
-                <b>Fecha función:</b>Viernes 22 de Enero de 2027 • 17:00 HRS. • Espacio Riesco
+                <b>Fecha función: </b>Viernes 22 de Enero de 2027 • 17:00 HRS. • Espacio Riesco
               </span>
               <span className="inline-block bg-yellow-400 border border-yellow-500 text-red-900 text-base md:text-lg font-black px-5 py-1.5 rounded-full shadow-md mt-2 animate-in zoom-in">
                 Valor del número: ${TICKET_PRICE.toLocaleString('es-CL')}
