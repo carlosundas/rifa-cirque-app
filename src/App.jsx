@@ -6,7 +6,8 @@ import {
   Ticket, Upload, ShieldCheck, CheckCircle2, XCircle, User, Phone, 
   Lock, LogOut, Clock, Image as ImageIcon, ShoppingCart, 
   Copy, Check, Landmark, ChevronDown, ChevronUp, Info, Timer,
-  Car, Wine, Tent, Users, Armchair, Badge, Gift, Wifi, Bath, Sparkles, AlertTriangle
+  Car, Wine, Tent, Users, Armchair, Badge, Gift, Wifi, Bath, Sparkles, AlertTriangle,
+  Settings, CalendarDays
 } from 'lucide-react';
 
 /* =========================================================================
@@ -38,6 +39,7 @@ const RESERVATION_TIME_LIMIT = 600;
 
 const getTicketsCollection = () => collection(db, 'rifas', appId, 'tickets');
 const getTicketDoc = (id) => doc(db, 'rifas', appId, 'tickets', id);
+const getConfigDoc = () => doc(db, 'rifas', appId, 'config', 'general'); // Nuevo documento para la configuración
 
 const BANK_DETAILS = {
   name: "Carlos UNDA",
@@ -82,9 +84,15 @@ export default function App() {
 
   const [selectedNumbers, setSelectedNumbers] = useState([]);
   
-  // Estados para Admin
+  // Estados para Admin y Configuración
   const [adminSelectedTicket, setAdminSelectedTicket] = useState(null);
   const [adminTicketGroup, setAdminTicketGroup] = useState([]);
+  const [showAdminConfig, setShowAdminConfig] = useState(false);
+  
+  // Fecha objetivo por defecto (27 de Agosto de 2026, 20:00 hrs)
+  const [targetDate, setTargetDate] = useState('2026-08-27T20:00'); 
+  const [adminNewDate, setAdminNewDate] = useState('');
+  const [countdown, setCountdown] = useState({ dias: 0, horas: 0, minutos: 0, segundos: 0 });
   
   const [showReserveModal, setShowReserveModal] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
@@ -106,7 +114,6 @@ export default function App() {
 
   // 1. Inicializar Autenticación y Título
   useEffect(() => {
-    // ESTA LÍNEA CAMBIA EL TÍTULO DE LA PESTAÑA DEL NAVEGADOR
     document.title = "Rifa 2 Entradas Cirque du Soleil";
 
     const initAuth = async () => {
@@ -128,11 +135,12 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Cargar Datos en tiempo real
+  // 2. Cargar Datos y Configuración en tiempo real
   useEffect(() => {
     if (!user) return;
     
-    const unsubscribe = onSnapshot(getTicketsCollection(), (snapshot) => {
+    // Suscripción a Tickets
+    const unsubscribeTickets = onSnapshot(getTicketsCollection(), (snapshot) => {
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setTicketsData(data);
         setLoading(false);
@@ -144,10 +152,22 @@ export default function App() {
         setLoading(false);
       }
     );
-    return () => unsubscribe();
+
+    // Suscripción a la Configuración General (Fecha del sorteo)
+    const unsubscribeConfig = onSnapshot(getConfigDoc(), (docSnap) => {
+      if (docSnap.exists() && docSnap.data().targetDate) {
+        setTargetDate(docSnap.data().targetDate);
+        setAdminNewDate(docSnap.data().targetDate);
+      }
+    });
+
+    return () => {
+      unsubscribeTickets();
+      unsubscribeConfig();
+    };
   }, [user]);
 
-  // 3. Temporizador
+  // 3. Temporizador de Reserva
   useEffect(() => {
     let timer;
     if (selectedNumbers.length > 0 && !isAdmin) {
@@ -173,6 +193,27 @@ export default function App() {
     }
     return () => clearInterval(timer);
   }, [selectedNumbers.length, isAdmin]);
+
+  // 4. Lógica de Cuenta Regresiva (Countdown)
+  useEffect(() => {
+    const calculateTimeLeft = () => {
+      const difference = +new Date(targetDate) - +new Date();
+      if (difference > 0) {
+        setCountdown({
+          dias: Math.floor(difference / (1000 * 60 * 60 * 24)),
+          horas: Math.floor((difference / (1000 * 60 * 60)) % 24),
+          minutos: Math.floor((difference / 1000 / 60) % 60),
+          segundos: Math.floor((difference / 1000) % 60)
+        });
+      } else {
+        setCountdown({ dias: 0, horas: 0, minutos: 0, segundos: 0 });
+      }
+    };
+
+    calculateTimeLeft(); // Llamada inicial
+    const timer = setInterval(calculateTimeLeft, 1000);
+    return () => clearInterval(timer);
+  }, [targetDate]);
 
   const ticketsMap = useMemo(() => {
     return ticketsData.reduce((acc, ticket) => {
@@ -381,11 +422,27 @@ export default function App() {
     }
   };
 
+  // NUEVO: Guardar nueva fecha del sorteo
+  const saveNewTargetDate = async () => {
+    if (!adminNewDate) {
+      showNotification("Selecciona una fecha válida", "error");
+      return;
+    }
+    try {
+      await setDoc(getConfigDoc(), { targetDate: adminNewDate }, { merge: true });
+      setShowAdminConfig(false);
+      showNotification("¡Fecha de sorteo actualizada para todos!", "success");
+    } catch (error) {
+      console.error("Error al actualizar la fecha:", error);
+      showNotification("Hubo un error al guardar la fecha.", "error");
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50 flex-col gap-4">
         <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-red-700"></div>
-        <p className="text-slate-500 font-medium animate-pulse">Cargando números disponibles...</p>
+        <p className="text-slate-500 font-medium animate-pulse">Conectando al servidor...</p>
       </div>
     );
   }
@@ -419,11 +476,16 @@ export default function App() {
               Rifa 2 Entradas <span className="text-red-500 hidden sm:inline">• Cirque du Soleil</span>
             </h1>
           </div>
-          <div>
+          <div className="flex items-center gap-2">
             {isAdmin ? (
-              <button onClick={() => setIsAdmin(false)} className="flex items-center gap-2 bg-red-700 hover:bg-red-800 px-3 py-1.5 md:px-4 md:py-2 rounded-lg transition-colors text-sm font-medium">
-                <LogOut className="h-4 w-4" /> <span className="hidden md:inline">Salir de Admin</span>
-              </button>
+              <>
+                <button onClick={() => setShowAdminConfig(true)} className="bg-slate-800 hover:bg-slate-700 p-2 rounded-lg transition-colors border border-slate-700" title="Configurar Sorteo">
+                  <Settings className="w-5 h-5 text-slate-300" />
+                </button>
+                <button onClick={() => setIsAdmin(false)} className="flex items-center gap-2 bg-red-700 hover:bg-red-800 px-3 py-1.5 md:px-4 md:py-2 rounded-lg transition-colors text-sm font-medium">
+                  <LogOut className="h-4 w-4" /> <span className="hidden md:inline">Salir de Admin</span>
+                </button>
+              </>
             ) : (
               <button onClick={() => setShowAdminLogin(true)} className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors p-2" title="Acceso Administrador">
                 <Lock className="h-5 w-5" />
@@ -443,11 +505,37 @@ export default function App() {
                 <Sparkles className="w-5 h-5 text-yellow-500" /> Categoría TAPIS ROUGE <Sparkles className="w-5 h-5 text-yellow-500" />
               </p>
               <span className="inline-block bg-red-900/60 border border-red-700 text-red-100 text-sm md:text-base font-semibold px-4 py-1.5 rounded-full shadow-sm mt-1">
-                <b>Fecha función: </b>Viernes 22 de Enero de 2027 • 17:00 HRS. • Espacio Riesco
+                <b>Fecha función:</b> Viernes 22 de Enero de 2027 • 17:00 HRS. • Espacio Riesco
               </span>
               <span className="inline-block bg-yellow-400 border border-yellow-500 text-red-900 text-base md:text-lg font-black px-5 py-1.5 rounded-full shadow-md mt-2 animate-in zoom-in">
                 Valor del número: ${TICKET_PRICE.toLocaleString('es-CL')}
               </span>
+
+              {/* CONTADOR DE TIEMPO */}
+              <div className="mt-6 border-t border-red-800/50 pt-5 w-full max-w-lg mx-auto">
+                <p className="text-red-200 text-sm font-bold uppercase tracking-widest mb-3">Tiempo restante para el sorteo</p>
+                <div className="flex justify-center gap-3 md:gap-4">
+                  <div className="flex flex-col items-center bg-black/30 p-2 md:p-3 rounded-xl border border-red-500/30 min-w-[65px] md:min-w-[80px] shadow-inner backdrop-blur-sm">
+                    <span className="text-2xl md:text-3xl font-black text-white">{countdown.dias.toString().padStart(2, '0')}</span>
+                    <span className="text-[10px] md:text-xs text-red-300 font-semibold uppercase mt-1">Días</span>
+                  </div>
+                  <div className="text-2xl font-bold text-red-500/50 pt-2">:</div>
+                  <div className="flex flex-col items-center bg-black/30 p-2 md:p-3 rounded-xl border border-red-500/30 min-w-[65px] md:min-w-[80px] shadow-inner backdrop-blur-sm">
+                    <span className="text-2xl md:text-3xl font-black text-white">{countdown.horas.toString().padStart(2, '0')}</span>
+                    <span className="text-[10px] md:text-xs text-red-300 font-semibold uppercase mt-1">Horas</span>
+                  </div>
+                  <div className="text-2xl font-bold text-red-500/50 pt-2">:</div>
+                  <div className="flex flex-col items-center bg-black/30 p-2 md:p-3 rounded-xl border border-red-500/30 min-w-[65px] md:min-w-[80px] shadow-inner backdrop-blur-sm">
+                    <span className="text-2xl md:text-3xl font-black text-white">{countdown.minutos.toString().padStart(2, '0')}</span>
+                    <span className="text-[10px] md:text-xs text-red-300 font-semibold uppercase mt-1">Min</span>
+                  </div>
+                  <div className="text-2xl font-bold text-red-500/50 pt-2">:</div>
+                  <div className="flex flex-col items-center bg-black/30 p-2 md:p-3 rounded-xl border border-red-500/30 min-w-[65px] md:min-w-[80px] shadow-inner backdrop-blur-sm">
+                    <span className="text-2xl md:text-3xl font-black text-white">{countdown.segundos.toString().padStart(2, '0')}</span>
+                    <span className="text-[10px] md:text-xs text-red-300 font-semibold uppercase mt-1">Seg</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -495,7 +583,7 @@ export default function App() {
               <AlertTriangle className="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" />
               <p className="text-sm leading-relaxed">
                 <span className="font-bold text-white block mb-0.5">Condiciones del Sorteo:</span> 
-                Si hasta el <strong>27 de agosto de 2026</strong> no se logra vender la totalidad de los {TOTAL_TICKETS} números, el plazo de la rifa se extenderá un mes más, hasta el <strong>27 de septiembre de 2026</strong>. Para que el sorteo se lleve a cabo de manera efectiva en cualquiera de las fechas, se requerirá un mínimo de <strong>50 números vendidos</strong>.
+                Si llegada la fecha del sorteo en el reloj no se ha logrado vender la totalidad de los {TOTAL_TICKETS} números, el plazo de la rifa se extenderá. Para que el sorteo se lleve a cabo de manera efectiva en cualquiera de las fechas, se requerirá un mínimo de <strong>50 números vendidos</strong>.
               </p>
             </div>
 
@@ -582,7 +670,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL ADMIN */}
+      {/* MODAL ADMIN - LOGIN */}
       {showAdminLogin && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
@@ -591,6 +679,28 @@ export default function App() {
             <div className="flex gap-3">
               <button onClick={() => setShowAdminLogin(false)} className="flex-1 py-2 rounded-lg font-medium text-slate-600 hover:bg-slate-100 transition">Cancelar</button>
               <button onClick={loginAdmin} className="flex-1 py-2 rounded-lg font-medium bg-slate-800 text-white hover:bg-slate-900 transition">Entrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ADMIN - CONFIGURACIÓN FECHA */}
+      {showAdminConfig && isAdmin && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+            <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-slate-800"><CalendarDays className="text-slate-600" /> Configurar Sorteo</h3>
+            
+            <p className="text-sm text-slate-600 mb-2 font-medium">Nueva fecha y hora de término:</p>
+            <input 
+              type="datetime-local" 
+              className="w-full border border-slate-300 rounded-lg p-3 mb-6 focus:ring-2 focus:ring-red-500 outline-none text-slate-800 bg-slate-50 font-medium" 
+              value={adminNewDate} 
+              onChange={(e) => setAdminNewDate(e.target.value)} 
+            />
+            
+            <div className="flex gap-3">
+              <button onClick={() => setShowAdminConfig(false)} className="flex-1 py-2 rounded-lg font-medium text-slate-600 hover:bg-slate-100 transition border border-slate-200">Cancelar</button>
+              <button onClick={saveNewTargetDate} className="flex-1 py-2 rounded-lg font-medium bg-red-700 text-white hover:bg-red-800 transition shadow-sm">Guardar Cambios</button>
             </div>
           </div>
         </div>
